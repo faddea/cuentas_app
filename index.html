@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Cuentas - Prototipo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .modal { transition: opacity 0.25s ease; }
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-900 pb-20">
+
+    <header class="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-40">
+        <h1 class="text-xl font-bold">Mis Cuentas</h1>
+    </header>
+
+    <main id="home" class="p-4 space-y-4">
+        <div id="listaClientes" class="space-y-3">
+            </div>
+    </main>
+
+    <section id="detalleCliente" class="hidden fixed inset-0 bg-gray-100 z-50 overflow-y-auto p-4">
+        <button onclick="cerrarDetalle()" class="mb-4 text-indigo-600 font-bold flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Volver
+        </button>
+        <div id="contenidoDetalle"></div>
+    </section>
+
+    <div class="fixed bottom-6 right-6 flex flex-col space-y-3">
+        <button onclick="abrirModal('modalMovimiento')" class="bg-green-500 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl">
+            <i class="fas fa-plus-circle"></i>
+        </button>
+        <button onclick="abrirModal('modalCliente')" class="bg-indigo-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl">
+            <i class="fas fa-user-plus"></i>
+        </button>
+    </div>
+
+    <div id="modalCliente" class="modal opacity-0 pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">
+        <div class="absolute inset-0 bg-black opacity-50"></div>
+        <div class="bg-white w-11/12 max-w-md p-6 rounded-xl relative z-10">
+            <h2 class="text-xl font-bold mb-4">Nuevo Cliente</h2>
+            <input type="text" id="regNombre" placeholder="Nombre completo" class="w-full p-2 border rounded mb-3">
+            <input type="number" id="regMontoInicial" placeholder="Monto inicial (opcional)" class="w-full p-2 border rounded mb-4">
+            <div class="flex justify-end space-x-2">
+                <button onclick="cerrarModal('modalCliente')" class="px-4 py-2 text-gray-500">Cancelar</button>
+                <button onclick="guardarCliente()" class="px-4 py-2 bg-indigo-600 text-white rounded">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalMovimiento" class="modal opacity-0 pointer-events-none fixed inset-0 z-[60] flex items-center justify-center">
+        <div class="absolute inset-0 bg-black opacity-50"></div>
+        <div class="bg-white w-11/12 max-w-md p-6 rounded-xl relative z-10">
+            <h2 class="text-xl font-bold mb-4">Registrar Movimiento</h2>
+            <select id="movClienteId" class="w-full p-2 border rounded mb-3"></select>
+            <select id="movTipo" class="w-full p-2 border rounded mb-3" onchange="toggleProductos()">
+                <option value="deuda">🟥 Deuda (Suma)</option>
+                <option value="pago">🟩 Pago (Resta)</option>
+            </select>
+            <input type="number" id="movMonto" placeholder="Monto" class="w-full p-2 border rounded mb-3">
+            <input type="text" id="movProductos" placeholder="Productos (ej: pan leche)" class="w-full p-2 border rounded mb-3">
+            <textarea id="movNota" placeholder="Nota opcional" class="w-full p-2 border rounded mb-4"></textarea>
+            <div class="flex justify-end space-x-2">
+                <button onclick="cerrarModal('modalMovimiento')" class="px-4 py-2 text-gray-500">Cancelar</button>
+                <button onclick="guardarMovimiento()" class="px-4 py-2 bg-green-600 text-white rounded">Registrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- LOGICA DE DATOS ---
+        let clientes = JSON.parse(localStorage.getItem('clientes')) || [];
+        let movimientos = JSON.parse(localStorage.getItem('movimientos')) || [];
+
+        function renderHome() {
+            const lista = document.getElementById('listaClientes');
+            const selectCliente = document.getElementById('movClienteId');
+            lista.innerHTML = '';
+            selectCliente.innerHTML = '<option value="">Seleccionar cliente</option>';
+
+            clientes.forEach(c => {
+                const total = calcularTotal(c.id);
+                lista.innerHTML += `
+                    <div onclick="verDetalle(${c.id})" class="bg-white p-4 rounded-lg shadow-sm border-l-4 ${total > 0 ? 'border-red-500' : 'border-green-500'} flex justify-between items-center active:bg-gray-50">
+                        <div>
+                            <p class="font-bold text-lg">${c.nombre}</p>
+                            <p class="text-sm text-gray-500">Saldo pendiente</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xl font-bold ${total > 0 ? 'text-red-600' : 'text-green-600'}">$${total.toLocaleString()}</p>
+                        </div>
+                    </div>
+                `;
+                selectCliente.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
+            });
+        }
+
+        function calcularTotal(clienteId) {
+    const cliente = clientes.find(c => c.id === clienteId);
+    const movs = movimientos.filter(m => m.clienteId === clienteId && !m.anulado); // Filtramos solo los NO anulados
+    let total = cliente.montoInicial || 0;
+    movs.forEach(m => {
+        if(m.tipo === 'deuda') total += m.monto;
+        else total -= m.monto;
+    });
+    return total;
+}
+
+        // --- FUNCIONES DE ACCIÓN ---
+        function guardarCliente() {
+            const nombre = document.getElementById('regNombre').value;
+            const monto = parseFloat(document.getElementById('regMontoInicial').value) || 0;
+            
+            if(!nombre) return alert("El nombre es obligatorio");
+
+            const nuevo = {
+                id: Date.now(),
+                nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1),
+                montoInicial: monto,
+                fechaCreacion: new Date().toISOString()
+            };
+
+            clientes.push(nuevo);
+            save();
+            cerrarModal('modalCliente');
+            renderHome();
+            document.getElementById('regNombre').value = '';
+            document.getElementById('regMontoInicial').value = '';
+        }
+
+        function guardarMovimiento() {
+            const clienteId = parseInt(document.getElementById('movClienteId').value);
+            const tipo = document.getElementById('movTipo').value;
+            const monto = parseFloat(document.getElementById('movMonto').value);
+            let productos = document.getElementById('movProductos').value;
+            const nota = document.getElementById('movNota').value;
+
+            if(!clienteId || !monto) return alert("Faltan datos");
+
+            // Lógica de formateo de productos: "pan leche" -> "pan, leche"
+            productos = productos.trim().replace(/\s+/g, ', ');
+
+            const mov = {
+                id: Date.now(),
+                clienteId,
+                tipo,
+                monto,
+                productos: tipo === 'deuda' ? productos : '',
+                nota,
+                fecha: new Date().toLocaleString()
+            };
+
+            movimientos.push(mov);
+            save();
+            cerrarModal('modalMovimiento');
+            renderHome();
+            // Reset campos
+            document.getElementById('movMonto').value = '';
+            document.getElementById('movProductos').value = '';
+            document.getElementById('movNota').value = '';
+        }
+
+        function verDetalle(id) {
+    const cliente = clientes.find(c => c.id === id);
+    if (!cliente) return;
+
+    const total = calcularTotal(id);
+    
+    // FILTRO CRUCIAL: Solo traemos los movimientos que NO estén anulados
+    const movs = movimientos
+        .filter(m => m.clienteId === id && !m.anulado) 
+        .reverse();
+    
+    const content = document.getElementById('contenidoDetalle');
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <button onclick="cerrarDetalle()" class="text-indigo-600 font-bold flex items-center p-2">
+            </button>
+            <button onclick="eliminarCliente(${cliente.id})" class="text-red-500 text-xs font-bold uppercase bg-red-50 px-3 py-2 rounded-lg border border-red-100">
+                <i class="fas fa-user-times mr-1"></i> Eliminar Cliente
+            </button>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-md mb-6 border border-gray-100">
+            <h2 class="text-2xl font-black text-gray-800">${cliente.nombre}</h2>
+            <div class="mt-3 flex justify-between items-end">
+                <span class="px-3 py-1 rounded-full text-xs font-bold ${total === 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                    ${total === 0 ? '🟢 CUENTA AL DÍA' : '🔴 TIENE DEUDA'}
+                </span>
+                <p class="text-3xl font-bold text-gray-900">$${total.toLocaleString()}</p>
+            </div>
+        </div>
+
+        <h3 class="font-bold text-gray-500 mb-3 ml-1 uppercase text-xs tracking-widest">Historial de Movimientos</h3>
+        <div class="space-y-3">
+            ${cliente.montoInicial > 0 ? `
+                <div class="bg-white p-3 rounded-lg text-sm border-l-4 border-gray-400 shadow-sm font-bold flex justify-between">
+                    <span>Monto Inicial</span>
+                    <span>$${cliente.montoInicial.toLocaleString()}</span>
+                </div>
+            ` : ''}
+
+            ${movs.length === 0 && cliente.montoInicial === 0 ? 
+                `<p class="text-center text-gray-400 py-10 text-sm italic">Sin movimientos registrados</p>` : ''}
+
+            ${movs.map(m => `
+                <div class="bg-white p-3 rounded-lg text-sm shadow-sm border-l-4 ${m.tipo === 'deuda' ? 'border-red-400' : 'border-green-400'}">
+                    <div class="flex justify-between font-bold items-start">
+                        <span>${m.tipo === 'deuda' ? '🟥 Deuda' : '🟩 Pago'}</span>
+                        <div class="flex items-center space-x-3">
+                            <span class="${m.tipo === 'deuda' ? 'text-red-600' : 'text-green-600'} text-base">
+                                $${m.monto.toLocaleString()}
+                            </span>
+                            <button onclick="anularMovimiento(${m.id}, ${id})" class="text-gray-300 hover:text-red-500 p-1">
+                                <i class="fas fa-times-circle text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-[10px] text-gray-400 mt-1">${m.fecha}</div>
+                    ${m.productos ? `<div class="mt-2 text-gray-700 bg-gray-50 p-2 rounded text-xs border border-gray-100">
+                        <strong>Prods:</strong> ${m.productos}
+                    </div>` : ''}
+                    ${m.nota ? `<div class="mt-1 italic text-gray-400 text-xs">"${m.nota}"</div>` : ''}
+                </div>
+            `).join('')}
+        </div>
+        <div class="h-20"></div>
+    `;
+    document.getElementById('detalleCliente').classList.remove('hidden');
+}
+        // --- UTILIDADES UI ---
+        function save() {
+            localStorage.setItem('clientes', JSON.stringify(clientes));
+            localStorage.setItem('movimientos', JSON.stringify(movimientos));
+        }
+
+        function abrirModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function cerrarModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        function cerrarDetalle() {
+            document.getElementById('detalleCliente').classList.add('hidden');
+        }
+
+        function toggleProductos() {
+            const tipo = document.getElementById('movTipo').value;
+            const inputProd = document.getElementById('movProductos');
+            inputProd.style.display = tipo === 'pago' ? 'none' : 'block';
+        }
+
+        window.onload = renderHome;
+
+        // --- FUNCIONES DE SEGURIDAD (BACKUP) ---
+
+function exportarDatos() {
+    const data = {
+        clientes: clientes,
+        movimientos: movimientos,
+        fechaBackup: new Date().toLocaleString()
+    };
+    
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "backup_cuentas_" + new Date().toLocaleDateString() + ".json");
+    document.body.appendChild(downloadAnchorNode); 
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+function importarDatos(event) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            if (importedData.clientes && importedData.movimientos) {
+                if(confirm("Se sobrescribirán los datos actuales. ¿Continuar?")) {
+                    clientes = importedData.clientes;
+                    movimientos = importedData.movimientos;
+                    save();
+                    renderHome();
+                    alert("Datos importados con éxito");
+                }
+            }
+        } catch (err) {
+            alert("Error al leer el archivo. Asegúrate de que sea un JSON válido.");
+        }
+    };
+    reader.readAsText(event.target.files[0]);
+}
+
+function anularMovimiento(movId, clienteId) {
+    if(confirm("¿Estás seguro de anular este movimiento? Esta acción no se puede deshacer y ajustará el saldo total.")) {
+        // Buscamos el movimiento y le agregamos la propiedad anulado
+        const index = movimientos.findIndex(m => m.id === movId);
+        if (index !== -1) {
+            movimientos[index].anulado = true;
+            save(); // Guardamos en LocalStorage
+            verDetalle(clienteId); // Refrescamos la vista de detalle
+            renderHome(); // Refrescamos la lista principal para actualizar el saldo
+        }
+    }
+}
+
+// Agrega esto al final de tu <script>
+function eliminarCliente(id) {
+    const cliente = clientes.find(c => c.id === id);
+    if (!cliente) return;
+
+    const mensaje = `¿Estás seguro de eliminar a "${cliente.nombre}"?\n\n` +
+                    `Se borrarán todos sus movimientos de forma permanente.`;
+
+    if (confirm(mensaje)) {
+        // Filtrar arrays para eliminar los datos
+        clientes = clientes.filter(c => c.id !== id);
+        movimientos = movimientos.filter(m => m.clienteId !== id);
+        
+        // Guardar cambios en LocalStorage
+        save();
+        
+        // Actualizar interfaz
+        cerrarDetalle();
+        renderHome();
+        
+        alert("Cliente eliminado.");
+    }
+}
+
+    </script>
+
+    <div class="mt-10 p-4 border-t border-gray-300 space-y-4">
+    <h3 class="text-gray-500 text-sm font-bold uppercase">Seguridad de Datos</h3>
+    <div class="grid grid-cols-2 gap-4">
+        <button onclick="exportarDatos()" class="bg-blue-100 text-blue-700 p-3 rounded-lg text-sm font-bold">
+            <i class="fas fa-download mr-2"></i> Descargar Backup
+        </button>
+        
+        <label class="bg-gray-200 text-gray-700 p-3 rounded-lg text-sm font-bold flex items-center justify-center cursor-pointer text-center">
+            <i class="fas fa-upload mr-2"></i> Subir Backup
+            <input type="file" class="hidden" onchange="importarDatos(event)">
+        </label>
+    </div>
+</div>
+
+</body>
+</html>
